@@ -1,0 +1,18 @@
+{
+  "name": "azure-durable-evolution",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "prettier": {
+    "max_line_length": 120,
+    "printWidth": 120
+  },
+  "scripts": {
+    "start": "func start",
+    "test": "echo \"No tests yet...\""
+  },
+  "dependencies": {
+    "durable-functions": "^2.1.1",
+    "eslint": "^8.34.0"
+  }
+}
