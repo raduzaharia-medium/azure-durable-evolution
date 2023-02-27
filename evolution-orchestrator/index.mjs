@@ -1,45 +1,27 @@
-﻿import { EntityId, orchestrator } from "durable-functions";
+﻿import { orchestrator } from "durable-functions";
 
 // each call evolves the population once
 // the state is saved across calls in the evolution-state durable entity
 export default orchestrator(function* (context) {
-  const state = new EntityId("evolution-state-entity", `evolution-state`);
-  let population = yield context.df.callEntity(state, "getPopulation");
-
-  if (population.length === 0) {
-    const newPopulation = yield context.df.callSubOrchestrator("get-random-matrix-orchestrator", {
-      length: 5,
-      width: 10,
-    });
-    yield context.df.callEntity(state, "setPopulation", newPopulation);
-  }
-  population = yield context.df.callEntity(state, "getPopulation");
-
-  const nextGeneration = [];
-  const currentBest = yield context.df.callSubOrchestrator("pick-best-vector-orchestrator", { vectors: population });
-  const mutant = yield context.df.callActivity("mutation-activity", { individual: currentBest, probability: 0.2 });
-  const best = yield context.df.callSubOrchestrator("pick-best-vector-orchestrator", {
-    vectors: [currentBest, mutant],
+  // const state = new EntityId("evolution-state-entity", `evolution-state-${context.invocationId}`);
+  let population = yield context.df.callSubOrchestrator("get-random-matrix-orchestrator", {
+    length: 5,
+    width: 10,
   });
-  nextGeneration.push(best);
+  let finalBest = yield context.df.callSubOrchestrator("pick-best-vector-orchestrator", { vectors: population });
+  let fitness = yield context.df.callActivity("get-fitness-activity", { individual: finalBest });
+  // yield context.df.callEntity(state, "setPopulation", population);
+  context.df.setCustomStatus({ partialResult: finalBest, fitness, populationLength: population.length });
 
-  const tasks = [];
-  for (const element of population) {
-    const other = population[Math.round(Math.random() * (population.length - 1))];
-    tasks.push(
-      context.df.callSubOrchestrator("create-child-orchestrator", {
-        parent1: element,
-        parent2: other,
-        mutationProbability: 0.2,
-      })
-    );
+  while (fitness > 1) {
+    population = yield context.df.callSubOrchestrator("evolution-step-orchestrator", { population });
+    // yield context.df.callEntity(state, "setPopulation", population);
+
+    finalBest = yield context.df.callSubOrchestrator("pick-best-vector-orchestrator", { vectors: population });
+    fitness = yield context.df.callActivity("get-fitness-activity", { individual: finalBest });
+
+    context.df.setCustomStatus({ partialResult: finalBest, fitness, populationLength: population.length });
   }
-  const children = yield context.df.Task.all(tasks);
 
-  for (const element of children) if (element) nextGeneration.push(element);
-  yield context.df.callEntity(state, "setPopulation", nextGeneration);
-
-  const finalBest = yield context.df.callSubOrchestrator("pick-best-vector-orchestrator", { vectors: nextGeneration });
-  const fitness = yield context.df.callActivity("get-fitness-activity", { individual: finalBest });
   return { result: finalBest, fitness };
 });
